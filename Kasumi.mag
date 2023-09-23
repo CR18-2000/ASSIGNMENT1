@@ -1,0 +1,208 @@
+function KeySchedule(K)
+/* We take as input a 128-bit key long K and we obtain as output a sequence of sequences of 16 bits subkeys.
+C is a sequence of 8 constants given by the paper.*/
+    C:=[0x0123,0x4567,0x89AB,0xCDEF,0xFEDC,0xBA98,0x7654,0x3210];
+    Kparts:=[];
+    Kfirst:=[];
+    /* We divide K into 8 parts of 16-bits and at the same time we compute K'=(k_1',...,k_8') where k_j' = (k_j xor c_j).*/
+    for i in [1..8] do
+        Kparts[i]:= Reverse(Intseq(StringToInteger(Substring(K,(i-1)*4+1,4),16),2,16)); 
+        Kfirst[i]:= ChangeUniverse(Eltseq(Vector(Kparts[i]) + Vector(Reverse(Intseq(C[i],2,16)))), GF(2));
+    end for;
+
+    /* We compute the round subkeys KL_i,j, KO_i,j and KI_i,j following the table in the paper. */
+    RoundKeys:=[];
+    Append(~RoundKeys,[Rotate(Kparts[1],-1),Rotate(Kparts[2],-1),Rotate(Kparts[3],-1),Rotate(Kparts[4],-1),Rotate(Kparts[5],-1),Rotate(Kparts[6],-1),Rotate(Kparts[7],-1),Rotate(Kparts[8],-1)]);
+    Append(~RoundKeys,Rotate(Kfirst,-2));
+    Append(~RoundKeys,[Rotate(Kparts[2],-5),Rotate(Kparts[3],-5),Rotate(Kparts[4],-5),Rotate(Kparts[5],-5),Rotate(Kparts[6],-5),Rotate(Kparts[7],-5),Rotate(Kparts[8],-5),Rotate(Kparts[1],-5)]);
+    Append(~RoundKeys,[Rotate(Kparts[6],-8),Rotate(Kparts[7],-8),Rotate(Kparts[8],-8),Rotate(Kparts[1],-8),Rotate(Kparts[2],-8),Rotate(Kparts[3],-8),Rotate(Kparts[4],-8),Rotate(Kparts[5],-8)]);
+    Append(~RoundKeys,[Rotate(Kparts[7],-13),Rotate(Kparts[8],-13),Rotate(Kparts[1],-13),Rotate(Kparts[2],-13),Rotate(Kparts[3],-13),Rotate(Kparts[4],-13),Rotate(Kparts[5],-13),Rotate(Kparts[6],-13)]);
+    Append(~RoundKeys,Rotate(Kfirst,4));
+    Append(~RoundKeys,Rotate(Kfirst,-3));
+    Append(~RoundKeys,Rotate(Kfirst,1));
+    return RoundKeys;
+end function;
+
+
+function FL(I, KL1, KL2)
+/* We take as input a 32-bits data input and the two subkeys KL_1 and KL_2 of 16 bits.
+Then we split I into two parts of 16 bits L and R.*/
+    L:=I[1..16];
+    R:=I[17..32];
+    /* We compute R' and L' using the FL function specifications and we output the 32 bits (L'||R').*/
+    L := ChangeUniverse(L, Integers());
+    R1:= ChangeUniverse(Eltseq(Vector(R)+Vector(Rotate(Intseq(BitwiseAnd(Seqint(L,2),Seqint(KL1,2)),2,16),-1))), GF(2));
+    R1 := ChangeUniverse(R1, Integers());
+    L1:=ChangeUniverse(Eltseq(Vector(L)+Vector(Rotate(Intseq(BitwiseOr(Seqint(R1,2),Seqint(KL2,2)), 2,16),-1))), GF(2));
+    return L1 cat R1;
+end function;
+
+ /* We build a function that takes as input a 7 bits value x and outputs a 9 bits value adding two zeros to the most-significant end (the left part).  */
+function ZE(x)
+    return [0,0] cat x;
+end function;
+
+/* We build a function that takes as input a 9 bits value x and outputs a 7 bits value discarding the first two bits starting from the left part.*/
+function TR(x)
+    return x[3..9];
+end function;
+
+
+
+/* We build the function S7 that takes as input a 7 bits input value and returns a 7 bits output.
+We write the table as in the paper, we convert the input in integers in order to find the position of
+the number that we have to convert in bits and give as output. 
+(We write numI+1 because the numbers in table starts from zero while in magma the first position of the array is 1). */ 
+function S7(I)
+    table := [54, 50, 62, 56, 22, 34, 94, 96, 38, 6, 63, 93, 2, 18,123, 33,
+            55,113, 39,114, 21, 67, 65, 12, 47, 73, 46, 27, 25,111,124, 81,
+            53, 9,121, 79, 52, 60, 58, 48,101,127, 40,120,104, 70, 71, 43,
+            20,122, 72, 61, 23,109, 13,100, 77, 1, 16, 7, 82, 10,105, 98,
+            117,116, 76, 11, 89,106, 0,125,118, 99, 86, 69, 30, 57,126, 87,
+            112, 51, 17, 5, 95, 14, 90, 84, 91, 8, 35,103, 32, 97, 28, 66,
+            102, 31, 26, 45, 75, 4, 85, 92, 37, 74, 80, 49, 68, 29,115, 44,
+            64,107,108, 24,110, 83, 36, 78, 42, 19, 15, 41, 88,119, 59, 3];
+    I := ChangeUniverse(I, Integers());
+    numI := Seqint(Reverse(I),2);
+    return Reverse(Intseq(table[numI+1],2,7));
+end function;
+
+/* We build the function S9 that takes as input a 9 bits input value and returns a 9 bits output.
+We write the table as in the paper, we convert the input in integers in order to find the position of
+the number that we have to convert in bits and give as output. 
+(We write numI+1 because the numbers in table starts from zero while in magma the first position of the array is 1). */
+function S9(I)
+    table := [167,239,161,379,391,334, 9,338, 38,226, 48,358,452,385, 90,397,
+                183,253,147,331,415,340, 51,362,306,500,262, 82,216,159,356,177,
+                175,241,489, 37,206, 17, 0,333, 44,254,378, 58,143,220, 81,400,
+                95, 3,315,245, 54,235,218,405,472,264,172,494,371,290,399, 76,
+                165,197,395,121,257,480,423,212,240, 28,462,176,406,507,288,223,
+                501,407,249,265, 89,186,221,428,164, 74,440,196,458,421,350,163,
+                232,158,134,354, 13,250,491,142,191, 69,193,425,152,227,366,135,
+                344,300,276,242,437,320,113,278, 11,243, 87,317, 36, 93,496, 27,
+                487,446,482, 41, 68,156,457,131,326,403,339, 20, 39,115,442,124,
+                475,384,508, 53,112,170,479,151,126,169, 73,268,279,321,168,364,
+                363,292, 46,499,393,327,324, 24,456,267,157,460,488,426,309,229,
+                439,506,208,271,349,401,434,236, 16,209,359, 52, 56,120,199,277,
+                465,416,252,287,246, 6, 83,305,420,345,153,502, 65, 61,244,282,
+                173,222,418, 67,386,368,261,101,476,291,195,430, 49, 79,166,330,
+                280,383,373,128,382,408,155,495,367,388,274,107,459,417, 62,454,
+                132,225,203,316,234, 14,301, 91,503,286,424,211,347,307,140,374,
+                35,103,125,427, 19,214,453,146,498,314,444,230,256,329,198,285,
+                50,116, 78,410, 10,205,510,171,231, 45,139,467, 29, 86,505, 32,
+                72, 26,342,150,313,490,431,238,411,325,149,473, 40,119,174,355,
+                185,233,389, 71,448,273,372, 55,110,178,322, 12,469,392,369,190,
+                1,109,375,137,181, 88, 75,308,260,484, 98,272,370,275,412,111,
+                336,318, 4,504,492,259,304, 77,337,435, 21,357,303,332,483, 18,
+                47, 85, 25,497,474,289,100,269,296,478,270,106, 31,104,433, 84,
+                414,486,394, 96, 99,154,511,148,413,361,409,255,162,215,302,201,
+                266,351,343,144,441,365,108,298,251, 34,182,509,138,210,335,133,
+                311,352,328,141,396,346,123,319,450,281,429,228,443,481, 92,404,
+                485,422,248,297, 23,213,130,466, 22,217,283, 70,294,360,419,127,
+                312,377, 7,468,194, 2,117,295,463,258,224,447,247,187, 80,398,
+                284,353,105,390,299,471,470,184, 57,200,348, 63,204,188, 33,451,
+                97, 30,310,219, 94,160,129,493, 64,179,263,102,189,207,114,402,
+                438,477,387,122,192, 42,381, 5,145,118,180,449,293,323,136,380,
+                43, 66, 60,455,341,445,202,432, 8,237, 15,376,436,464, 59,461];
+    I := ChangeUniverse(I, Integers());
+    numI := Seqint(Reverse(I),2);
+    return Reverse(Intseq(table[numI+1],2,9));
+end function;
+
+
+/* We build FI that takes as input a 16 bits input data I and a subkey of 16 bits KI.*/
+function FI(I,KI)
+/*We construct L_i (i in {1,..,4}) and R_i (i in {1,..,4}) following the specifications of the paper.*/
+    L1 := [I[i]:i in [10..16]];
+    R1 := ChangeUniverse(Eltseq(Vector(S9(I[1..9])) + Vector(ZE(L1))),GF(2));
+    L2 := ChangeUniverse(Eltseq(Vector(R1) + Vector(KI[8..16])),GF(2));
+    R2 := ChangeUniverse(Eltseq(Vector(S7(L1)) + Vector(TR(Eltseq(R1))) + Vector(KI[1..7])),GF(2));
+    /*Since L_3 = R_2, we don't need to declare another variable L_3.*/
+    R3:= ChangeUniverse(Eltseq(Vector(S9(Eltseq(L2))) + Vector(ZE(Eltseq(R2)))),GF(2));
+    L4 := ChangeUniverse(Eltseq(Vector(S7(Eltseq(R2))) + Vector(TR(Eltseq(R3)))),GF(2));
+    /* Since R_4 = R_3 we don't need to declare another variable R_4.*/
+    return Eltseq(L4) cat Eltseq(R3);
+end function;
+
+/* We build the function FO that takes as input the 32 bits data input I, the 16 bits subkeys KO1, KO2 and KO3 (that are such that KO = (KO1||KO2||KO3)) and the 16 bits 
+subkeys KI1, KI2 and KI3 (that are such that KI = (KI1||KI2||KI3)) and return as output the 32 bits value (L_3'||R_3').
+Each part R_j, L_j (j in {1,2,3}) is built following the specifications given in the paper. */
+function FO(I, KO1, KO2, KO3, KI1, KI2, KI3)
+    R1 := ChangeUniverse(Eltseq(Vector(FI(ChangeUniverse(Eltseq(Vector(I[1..16])+Vector(KO1)), GF(2)),KI1))+ Vector(I[17..32])), GF(2));
+    R2 :=ChangeUniverse(Eltseq(Vector(FI(ChangeUniverse(Eltseq(Vector(I[17..32])+Vector(KO2)), GF(2)),KI2))+ Vector(R1)), GF(2));
+    R3 := ChangeUniverse(Eltseq(Vector(FI(ChangeUniverse(Eltseq(Vector(R1)+Vector(KO3)), GF(2)),KI3))+ Vector(R2)), GF(2));
+    return R2 cat R3;
+end function;
+
+/* We take as input a string P of bytes in hexadecimal notation of length 8, 
+a string K of bytes in hexadecimal notation of lenght 16 and we output a string C 
+of bytes in hexadecimal notation of length 8.*/
+function Kasumi(P,K)
+/* We convert from hexadecimal to bits the P input.*/
+    bitP := Reverse(Intseq(StringToInteger(P,16),2,64)); 
+    /* We recall the KeySchedule function. */
+    key := KeySchedule(K);
+
+/* We make a cycle of 4 rounds instead of 8, since the even and the odd rounds are different.
+Consequently in a step of the cycle we compute both an odd and an even round.
+We construct each round as given by the specifications of the paper.*/
+    for EvenRound in [1..4] do
+        left := bitP[1..32];
+        fi := FO(FL(left, key[1][(EvenRound-1)*2+1], key[2][(EvenRound-1)*2+1]), key[3][(EvenRound-1)*2+1], key[4][(EvenRound-1)*2+1], key[5][(EvenRound-1)*2+1], key[6][(EvenRound-1)*2+1], key[7][(EvenRound-1)*2+1], key[8][(EvenRound-1)*2+1]);
+        newLeft := Vector(bitP[33..64]) + Vector(fi);
+        bitP := ChangeUniverse(Eltseq(newLeft), GF(2)) cat left;
+        left := bitP[1..32];
+        fi := FL(FO(left, key[3][EvenRound*2], key[4][EvenRound*2], key[5][EvenRound*2], key[6][EvenRound*2], key[7][EvenRound*2], key[8][EvenRound*2]), key[1][EvenRound*2], key[2][EvenRound*2]);
+        newLeft := Vector(bitP[33..64]) + Vector(fi);
+        bitP := ChangeUniverse(Eltseq(newLeft), GF(2)) cat left;
+    end for;
+    /* We convert the binary bitP into hexadecimal notation and we add the zeros we need to reach the correct lenght of the output.*/
+    bitP:=ChangeUniverse(bitP,Integers()); 
+    C := IntegerToString(Seqint(Reverse(bitP),2),16); 
+    if #C le 16 then  
+    /* We construct a string of 16-#C zeros.*/
+        stringa := "0"^(16-#C); 
+        C := stringa cat C ; 
+    end if; 
+    return C;
+end function;
+
+
+
+
+
+
+
+
+//DECRYPTION
+/* We construct the decryption function by taking as input a string C of bytes in hexadecimal notation of length 8 and 
+a string K of bytes in hexadecimal notation of length 16 and we return as output a string P of bytes in hexadecimal notation of 
+length 8.*/
+function KasumiDecryption(C,K)
+/* We convert the C input from hexadecimal notation to binary one.*/
+    bitC:=Reverse(Intseq(StringToInteger(C,16),2,64));
+    /* We recall the KeySchedule function.*/
+    key := KeySchedule(K);
+    /* From Fig.1 of the paper we observed that for the decryption, starting from the bottom of the picture and following the trail, the right part goes to the left without changing, while
+    the left part goes to the right making a xor with the output of the fi function.
+    The keys has to be considered in reversed order (from 8th to 1st).
+    Moreover we have to consider that the even rounds of the encryption became the new odd rounds of the decryption. */
+    for EvenRound in [1..4] do
+        left := bitC[1..32];
+        right := bitC[33..64];
+        fi := FL(FO(right, key[3][9-(EvenRound*2)+1], key[4][9-(EvenRound*2)+1], key[5][9-(EvenRound*2)+1], key[6][9-(EvenRound*2)+1], key[7][9-(EvenRound*2)+1], key[8][9-(EvenRound*2)+1]), key[1][9-(EvenRound*2)+1], key[2][9-(EvenRound*2)+1]);
+	    firstRight := ChangeUniverse(Eltseq(Vector(left) + Vector(fi)), GF(2));
+        fi := FO(FL(firstRight, key[1][9-(EvenRound*2)], key[2][9-(EvenRound*2)]), key[3][9-(EvenRound*2)], key[4][9-(EvenRound*2)], key[5][9-(EvenRound*2)], key[6][9-(EvenRound*2)], key[7][9-(EvenRound*2)], key[8][9-(EvenRound*2)]);        
+        secondRight := ChangeUniverse(Eltseq(Vector(right) + Vector(fi)), GF(2));
+        bitC := firstRight cat secondRight;
+    end for;
+    /* We convert bitC from binary to hexadecimal notation, then we add the zeros we need in order to 
+    reach the wanted lenght.*/
+    bitC:=ChangeUniverse(bitC,Integers()); 
+    P := IntegerToString(Seqint(Reverse(bitC),2),16); 
+    if #P le 16 then  
+        stringa := "0"^(16-#P); 
+        P := stringa cat P; 
+    end if;
+    return P;
+end function;
